@@ -5,6 +5,8 @@ import serpent.ocr
 from serpent.game_agent import GameAgent
 from serpent.frame_grabber import FrameGrabber
 from serpent.input_controller import KeyboardKey
+from serpent.sprite import Sprite
+from serpent.sprite_locator import SpriteLocator
 
 from serpent.machine_learning.reinforcement_learning.ddqn import DDQN
 from serpent.machine_learning.reinforcement_learning.keyboard_mouse_action_space import KeyboardMouseActionSpace
@@ -93,11 +95,11 @@ class SerpentVVVVVVGameAgent(GameAgent):
 
             return None
 
-        vessel_hp = self._measure_vessel_hp(game_frame)
-        vessel_score = self._measure_vessel_score(game_frame)
+        actor_hp = self._measure_actor_hp(game_frame)
+        run_score = self._measure_run_score(game_frame)
 
-        self.game_state["health"].appendleft(vessel_hp)
-        self.game_state["score"].appendleft(vessel_score)
+        self.game_state["health"].appendleft(actor_hp)
+        self.game_state["score"].appendleft(run_score)
 
         if self.dqn_direction.frame_stack is None:
             full_game_frame = FrameGrabber.get_frames(
@@ -223,7 +225,7 @@ class SerpentVVVVVVGameAgent(GameAgent):
                         self.dqn_direction.enter_run_mode()
                     else:
                         self.dqn_direction.enter_train_mode()
- 
+
                 #self.input_controller.tap_key(KeyboardKey.KEY_SPACE)
                 #time.sleep(3)
 
@@ -269,20 +271,31 @@ class SerpentVVVVVVGameAgent(GameAgent):
             "run_timestamp": datetime.utcnow(),
         }
 
-    def _measure_vessel_hp(self, game_frame):
+    def _measure_actor_hp(self, game_frame):
         hp_area_frame = serpent.cv.extract_region_from_image(game_frame.frame, self.game.screen_regions["HP_AREA"])
         hp_area_image = Image.fromarray(hp_area_frame)
 
-        vessel_hp = 0
-        max_ssim = 0
+        actor_hp = 0
 
-        image_colors = hp_area_image.getcolors()
+        image_colors = hp_area_image.getcolors() # TODO: remove in favor of sprite detection and location
         if image_colors:
-            vessel_hp = len(image_colors) - 7
+            actor_hp = len(image_colors) - 7
 
-        return vessel_hp
+        for name, sprite in self.game.sprites.items():
+            query_sprite = Sprite("QUERY", image_data=sprite.image_data)
+            sprite_name = self.sprite_identifier.identify(query_sprite, mode="CONSTELLATION_OF_PIXELS")  # Will be "UNKNOWN" if no match
+            print(sprite_name)
+            sprite_to_locate = Sprite("QUERY", image_data=sprite.image_data)
 
-    def _measure_vessel_score(self, game_frame):
+            sprite_locator = SpriteLocator()
+            location = sprite_locator.locate(sprite=sprite_to_locate, game_frame=game_frame)
+            print(location)
+            if location:
+                actor_hp = 1000000
+
+        return actor_hp
+
+    def _measure_run_score(self, game_frame):
         score_area_frame = serpent.cv.extract_region_from_image(game_frame.frame, self.game.screen_regions["SCORE_AREA"])
 
         score_grayscale = np.array(skimage.color.rgb2gray(score_area_frame) * 255, dtype="uint8")
